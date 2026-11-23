@@ -1,0 +1,4 @@
+-r requirements.txt
+networkx==3.6.1
+ortools==9.15.6755
+

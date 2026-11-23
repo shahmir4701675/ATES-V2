@@ -1,0 +1,710 @@
+{
+  "project": "ATES-DB",
+  "date_local": "2026-11-21",
+  "source": "Read-only Supabase and PostgreSQL catalogs. Baseline for design review, not a restorable backup or a migration.",
+  "srs_sha256": "6F6D9D36C98C772B5F8259FCEB8E136A3C141F2C6CB1F1F3A68692DBA905F500",
+  "server": {
+    "db_version": "17.11",
+    "encoding": "UTF8",
+    "zone": "UTC"
+  },
+  "recorded_supabase_migrations": [],
+  "column_notation": "name type; ! means NOT NULL, ? means nullable; = precedes a default. IDENTITY marks a server-generated key. PostgreSQL type aliases are retained.",
+  "role_flags": [
+    {
+      "name": "anon",
+      "bypass_rls": false
+    },
+    {
+      "name": "authenticated",
+      "bypass_rls": false
+    },
+    {
+      "name": "service_role",
+      "bypass_rls": true
+    }
+  ],
+  "checked_effective_table_privileges_by_role": {
+    "anon": [
+      "DELETE",
+      "INSERT",
+      "SELECT",
+      "TRUNCATE",
+      "UPDATE"
+    ],
+    "authenticated": [
+      "DELETE",
+      "INSERT",
+      "SELECT",
+      "TRUNCATE",
+      "UPDATE"
+    ],
+    "service_role": [
+      "DELETE",
+      "INSERT",
+      "SELECT",
+      "TRUNCATE",
+      "UPDATE"
+    ]
+  },
+  "privilege_scope": "These tested table privileges are the same on all 21 tables. Provider API exposure and user sessions were not tested.",
+  "tables": [
+    {
+      "name": "public.academic_terms",
+      "columns": [
+        "term_id int4! IDENTITY",
+        "name varchar(50)!",
+        "start_date date!",
+        "end_date date!",
+        "status varchar(10)!='Planned'::character varying"
+      ],
+      "constraints": [
+        "CHECK ((end_date > start_date))",
+        "CHECK (((status)::text = ANY ((ARRAY['Planned'::character varying, 'Active'::character varying, 'Closed'::character varying])::text[])))",
+        "PRIMARY KEY (term_id)",
+        "UNIQUE (name)"
+      ],
+      "index_keys_and_predicates": [
+        "(name)",
+        "(term_id)",
+        "(status) WHERE ((status)::text = 'Active'::text)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.audit_logs",
+      "columns": [
+        "log_id int4! IDENTITY",
+        "user_id int4?",
+        "action varchar(40)!",
+        "entity_type varchar(30)?",
+        "entity_id int4?",
+        "details text?",
+        "created_at timestamp!=CURRENT_TIMESTAMP"
+      ],
+      "constraints": [
+        "FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (log_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(log_id)",
+        "(action)",
+        "(created_at)",
+        "(user_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_audit_logs_immutable BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION fn_prevent_log_mutation()"
+      ]
+    },
+    {
+      "name": "public.batches",
+      "columns": [
+        "batch_id int4! IDENTITY",
+        "department_id int4!",
+        "program_code varchar(10)!",
+        "batch_year int2!",
+        "section varchar(5)!",
+        "strength int2!",
+        "is_active bool!=true"
+      ],
+      "constraints": [
+        "CHECK ((strength > 0))",
+        "FOREIGN KEY (department_id) REFERENCES departments(department_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (batch_id)",
+        "UNIQUE (program_code, batch_year, section)"
+      ],
+      "index_keys_and_predicates": [
+        "(batch_id)",
+        "(department_id)",
+        "(program_code, batch_year, section)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.conflict_log",
+      "columns": [
+        "conflict_id int4! IDENTITY",
+        "schedule_id int4!",
+        "conflict_type varchar(30)!",
+        "severity varchar(8)!",
+        "description text!",
+        "entity_ref varchar(100)?",
+        "detected_at timestamp!=CURRENT_TIMESTAMP",
+        "is_resolved bool!=false"
+      ],
+      "constraints": [
+        "CHECK (((severity)::text = ANY ((ARRAY['Hard'::character varying, 'Warning'::character varying])::text[])))",
+        "FOREIGN KEY (schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE",
+        "PRIMARY KEY (conflict_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(conflict_id)",
+        "(schedule_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.constraint_rules",
+      "columns": [
+        "rule_id int4! IDENTITY",
+        "config_id int4!",
+        "rule_code varchar(6)!",
+        "rule_type varchar(4)!",
+        "is_enabled bool!=true",
+        "weight int2!=0",
+        "param_value int4?"
+      ],
+      "constraints": [
+        "CHECK ((NOT (((rule_code)::text = ANY ((ARRAY['H01'::character varying, 'H02'::character varying, 'H03'::character varying, 'H08'::character varying, 'E01'::character varying, 'E04'::character varying, 'E05'::character varying])::text[])) AND (is_enabled = false))))",
+        "CHECK (((rule_type)::text = ANY ((ARRAY['Hard'::character varying, 'Soft'::character varying])::text[])))",
+        "CHECK (((weight >= 0) AND (weight <= 10)))",
+        "FOREIGN KEY (config_id) REFERENCES scheduling_configs(config_id) ON DELETE CASCADE",
+        "PRIMARY KEY (rule_id)",
+        "UNIQUE (config_id, rule_code)"
+      ],
+      "index_keys_and_predicates": [
+        "(rule_id)",
+        "(config_id)",
+        "(config_id, rule_code)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.course_offerings",
+      "columns": [
+        "offering_id int4! IDENTITY",
+        "term_id int4!",
+        "course_id int4!",
+        "batch_id int4!",
+        "instructor_id int4!",
+        "enrolled_count int2!"
+      ],
+      "constraints": [
+        "CHECK ((enrolled_count > 0))",
+        "FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (course_id) REFERENCES courses(course_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (instructor_id) REFERENCES instructors(instructor_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (term_id) REFERENCES academic_terms(term_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (offering_id)",
+        "UNIQUE (offering_id, instructor_id, batch_id)",
+        "UNIQUE (term_id, course_id, batch_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(offering_id)",
+        "(batch_id)",
+        "(course_id)",
+        "(instructor_id)",
+        "(term_id)",
+        "(offering_id, instructor_id, batch_id)",
+        "(term_id, course_id, batch_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.courses",
+      "columns": [
+        "course_id int4! IDENTITY",
+        "course_code varchar(15)!",
+        "title varchar(150)!",
+        "department_id int4!",
+        "credit_hours int2!",
+        "lecture_hours int2!=0",
+        "lab_hours int2!=0",
+        "is_active bool!=true"
+      ],
+      "constraints": [
+        "CHECK ((credit_hours >= 0))",
+        "CHECK ((lab_hours >= 0))",
+        "CHECK ((lecture_hours >= 0))",
+        "CHECK (((lecture_hours + lab_hours) > 0))",
+        "FOREIGN KEY (department_id) REFERENCES departments(department_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (course_id)",
+        "UNIQUE (course_code)"
+      ],
+      "index_keys_and_predicates": [
+        "(course_code)",
+        "(course_id)",
+        "(department_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.departments",
+      "columns": [
+        "department_id int4! IDENTITY",
+        "code varchar(10)!",
+        "name varchar(100)!"
+      ],
+      "constraints": [
+        "PRIMARY KEY (department_id)",
+        "UNIQUE (code)"
+      ],
+      "index_keys_and_predicates": [
+        "(code)",
+        "(department_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.enrollments",
+      "columns": [
+        "enrollment_id int4! IDENTITY",
+        "offering_id int4!",
+        "student_id int4!"
+      ],
+      "constraints": [
+        "FOREIGN KEY (offering_id) REFERENCES course_offerings(offering_id) ON DELETE CASCADE",
+        "FOREIGN KEY (student_id) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (enrollment_id)",
+        "UNIQUE (offering_id, student_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(enrollment_id)",
+        "(offering_id)",
+        "(student_id)",
+        "(offering_id, student_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.exam_entries",
+      "columns": [
+        "exam_entry_id int4! IDENTITY",
+        "schedule_id int4!",
+        "course_id int4!",
+        "exam_slot_id int4!",
+        "student_count int2!",
+        "is_locked bool!=false"
+      ],
+      "constraints": [
+        "CHECK ((student_count > 0))",
+        "FOREIGN KEY (course_id) REFERENCES courses(course_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (exam_slot_id) REFERENCES exam_slots(exam_slot_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE",
+        "PRIMARY KEY (exam_entry_id)",
+        "UNIQUE (schedule_id, course_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(exam_entry_id)",
+        "(course_id)",
+        "(exam_slot_id)",
+        "(schedule_id)",
+        "(schedule_id, course_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_exam_entries_protect_published BEFORE INSERT OR DELETE OR UPDATE ON public.exam_entries FOR EACH ROW EXECUTE FUNCTION fn_prevent_published_schedule_entry_edit()"
+      ]
+    },
+    {
+      "name": "public.exam_room_allocations",
+      "columns": [
+        "allocation_id int4! IDENTITY",
+        "exam_entry_id int4!",
+        "room_id int4!",
+        "seats_allocated int2!"
+      ],
+      "constraints": [
+        "CHECK ((seats_allocated > 0))",
+        "FOREIGN KEY (exam_entry_id) REFERENCES exam_entries(exam_entry_id) ON DELETE CASCADE",
+        "FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (allocation_id)",
+        "UNIQUE (exam_entry_id, room_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(allocation_id)",
+        "(exam_entry_id)",
+        "(room_id)",
+        "(exam_entry_id, room_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_exam_allocations_protect_published BEFORE INSERT OR DELETE OR UPDATE ON public.exam_room_allocations FOR EACH ROW EXECUTE FUNCTION fn_prevent_published_schedule_entry_edit()",
+        "CREATE TRIGGER trg_exam_room_allocations_capacity BEFORE INSERT OR UPDATE ON public.exam_room_allocations FOR EACH ROW EXECUTE FUNCTION fn_check_exam_room_capacity()"
+      ]
+    },
+    {
+      "name": "public.exam_slots",
+      "columns": [
+        "exam_slot_id int4! IDENTITY",
+        "term_id int4!",
+        "exam_date date!",
+        "start_time time!",
+        "end_time time!",
+        "label varchar(30)?"
+      ],
+      "constraints": [
+        "CHECK ((end_time > start_time))",
+        "FOREIGN KEY (term_id) REFERENCES academic_terms(term_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (exam_slot_id)",
+        "UNIQUE (term_id, exam_date, start_time)"
+      ],
+      "index_keys_and_predicates": [
+        "(exam_slot_id)",
+        "(term_id)",
+        "(term_id, exam_date, start_time)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_exam_slots_no_overlap BEFORE INSERT OR UPDATE ON public.exam_slots FOR EACH ROW EXECUTE FUNCTION fn_check_exam_slot_overlap()"
+      ]
+    },
+    {
+      "name": "public.import_logs",
+      "columns": [
+        "import_id int4! IDENTITY",
+        "user_id int4!",
+        "entity_type varchar(20)!",
+        "file_name varchar(120)!",
+        "rows_total int4!",
+        "rows_imported int4!",
+        "rows_rejected int4!",
+        "imported_at timestamp!=CURRENT_TIMESTAMP"
+      ],
+      "constraints": [
+        "CHECK (((rows_total >= 0) AND (rows_imported >= 0) AND (rows_rejected >= 0)))",
+        "FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (import_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(user_id)",
+        "(import_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_import_logs_immutable BEFORE DELETE OR UPDATE ON public.import_logs FOR EACH ROW EXECUTE FUNCTION fn_prevent_log_mutation()"
+      ]
+    },
+    {
+      "name": "public.instructor_availability",
+      "columns": [
+        "availability_id int4! IDENTITY",
+        "instructor_id int4!",
+        "slot_id int4!",
+        "is_available bool!=true"
+      ],
+      "constraints": [
+        "FOREIGN KEY (instructor_id) REFERENCES instructors(instructor_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (slot_id) REFERENCES time_slots(slot_id) ON DELETE CASCADE",
+        "PRIMARY KEY (availability_id)",
+        "UNIQUE (instructor_id, slot_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(instructor_id)",
+        "(slot_id)",
+        "(availability_id)",
+        "(instructor_id, slot_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.instructors",
+      "columns": [
+        "instructor_id int4! IDENTITY",
+        "department_id int4!",
+        "full_name varchar(100)!",
+        "email varchar(120)!",
+        "max_daily_hours int2!=4",
+        "max_weekly_hours int2!=18",
+        "is_active bool!=true"
+      ],
+      "constraints": [
+        "CHECK ((max_daily_hours > 0))",
+        "CHECK ((max_weekly_hours >= max_daily_hours))",
+        "FOREIGN KEY (department_id) REFERENCES departments(department_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (instructor_id)",
+        "UNIQUE (email)"
+      ],
+      "index_keys_and_predicates": [
+        "(department_id)",
+        "(email)",
+        "(instructor_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.rooms",
+      "columns": [
+        "room_id int4! IDENTITY",
+        "room_code varchar(20)!",
+        "building varchar(50)!",
+        "capacity int2!",
+        "room_type varchar(12)!",
+        "is_active bool!=true"
+      ],
+      "constraints": [
+        "CHECK ((capacity > 0))",
+        "CHECK (((room_type)::text = ANY ((ARRAY['Lecture'::character varying, 'Lab'::character varying, 'Exam Hall'::character varying])::text[])))",
+        "PRIMARY KEY (room_id)",
+        "UNIQUE (room_code)"
+      ],
+      "index_keys_and_predicates": [
+        "(room_id)",
+        "(room_code)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.schedules",
+      "columns": [
+        "schedule_id int4! IDENTITY",
+        "term_id int4!",
+        "config_id int4!",
+        "schedule_type varchar(10)!",
+        "version_no int2!",
+        "status varchar(12)!='Draft'::character varying",
+        "solver_status varchar(15)?",
+        "objective_score numeric?",
+        "run_seconds numeric?",
+        "generated_by int4!",
+        "generated_at timestamp!=CURRENT_TIMESTAMP",
+        "approved_by int4?",
+        "published_at timestamp?"
+      ],
+      "constraints": [
+        "CHECK (((schedule_type)::text = ANY ((ARRAY['Timetable'::character varying, 'Exam'::character varying])::text[])))",
+        "CHECK (((solver_status IS NULL) OR ((solver_status)::text = ANY ((ARRAY['optimal'::character varying, 'feasible'::character varying, 'infeasible'::character varying, 'unknown'::character varying, 'interrupted'::character varying])::text[]))))",
+        "CHECK (((status)::text = ANY ((ARRAY['Draft'::character varying, 'Generating'::character varying, 'Infeasible'::character varying, 'Generated'::character varying, 'Published'::character varying, 'Archived'::character varying])::text[])))",
+        "CHECK ((version_no > 0))",
+        "FOREIGN KEY (approved_by) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (config_id) REFERENCES scheduling_configs(config_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (generated_by) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (term_id) REFERENCES academic_terms(term_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (schedule_id)",
+        "UNIQUE (term_id, schedule_type, version_no)"
+      ],
+      "index_keys_and_predicates": [
+        "(approved_by)",
+        "(config_id)",
+        "(generated_by)",
+        "(term_id)",
+        "(schedule_id)",
+        "(term_id, schedule_type) WHERE ((status)::text = 'Published'::text)",
+        "(term_id, schedule_type, version_no)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.scheduling_configs",
+      "columns": [
+        "config_id int4! IDENTITY",
+        "term_id int4!",
+        "schedule_type varchar(10)!",
+        "name varchar(60)!",
+        "solver_time_limit_s int2!=120",
+        "random_seed int4!=1",
+        "created_by int4!",
+        "created_at timestamp!=CURRENT_TIMESTAMP"
+      ],
+      "constraints": [
+        "CHECK (((schedule_type)::text = ANY ((ARRAY['Timetable'::character varying, 'Exam'::character varying])::text[])))",
+        "CHECK (((solver_time_limit_s >= 10) AND (solver_time_limit_s <= 600)))",
+        "FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (term_id) REFERENCES academic_terms(term_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (config_id)",
+        "UNIQUE (term_id, schedule_type, name)"
+      ],
+      "index_keys_and_predicates": [
+        "(created_by)",
+        "(term_id)",
+        "(config_id)",
+        "(term_id, schedule_type, name)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.time_slots",
+      "columns": [
+        "slot_id int4! IDENTITY",
+        "term_id int4!",
+        "day_of_week int2!",
+        "slot_index int2!",
+        "start_time time!",
+        "end_time time!",
+        "is_blocked bool!=false",
+        "block_reason varchar(50)?"
+      ],
+      "constraints": [
+        "CHECK (((NOT is_blocked) OR ((block_reason IS NOT NULL) AND (length(TRIM(BOTH FROM block_reason)) > 0))))",
+        "CHECK (((day_of_week >= 1) AND (day_of_week <= 7)))",
+        "CHECK ((slot_index > 0))",
+        "CHECK ((end_time > start_time))",
+        "FOREIGN KEY (term_id) REFERENCES academic_terms(term_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (slot_id)",
+        "UNIQUE (term_id, day_of_week, slot_index)"
+      ],
+      "index_keys_and_predicates": [
+        "(term_id)",
+        "(slot_id)",
+        "(term_id, day_of_week, slot_index)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    },
+    {
+      "name": "public.timetable_entries",
+      "columns": [
+        "entry_id int4! IDENTITY",
+        "schedule_id int4!",
+        "offering_id int4!",
+        "instructor_id int4!",
+        "batch_id int4!",
+        "room_id int4!",
+        "slot_id int4!",
+        "session_type varchar(7)!",
+        "is_locked bool!=false",
+        "is_manual_override bool!=false"
+      ],
+      "constraints": [
+        "CHECK (((session_type)::text = ANY ((ARRAY['Lecture'::character varying, 'Lab'::character varying])::text[])))",
+        "FOREIGN KEY (offering_id, instructor_id, batch_id) REFERENCES course_offerings(offering_id, instructor_id, batch_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (instructor_id) REFERENCES instructors(instructor_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (offering_id) REFERENCES course_offerings(offering_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE",
+        "FOREIGN KEY (slot_id) REFERENCES time_slots(slot_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (entry_id)",
+        "UNIQUE (schedule_id, batch_id, slot_id)",
+        "UNIQUE (schedule_id, instructor_id, slot_id)",
+        "UNIQUE (schedule_id, room_id, slot_id)"
+      ],
+      "index_keys_and_predicates": [
+        "(batch_id)",
+        "(instructor_id)",
+        "(offering_id)",
+        "(room_id)",
+        "(schedule_id)",
+        "(slot_id)",
+        "(entry_id)",
+        "(schedule_id, batch_id, slot_id)",
+        "(schedule_id, instructor_id, slot_id)",
+        "(schedule_id, room_id, slot_id)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": [
+        "CREATE TRIGGER trg_timetable_entries_protect_published BEFORE INSERT OR DELETE OR UPDATE ON public.timetable_entries FOR EACH ROW EXECUTE FUNCTION fn_prevent_published_schedule_entry_edit()"
+      ]
+    },
+    {
+      "name": "public.users",
+      "columns": [
+        "user_id int4! IDENTITY",
+        "username varchar(40)!",
+        "password_hash varchar(100)!",
+        "full_name varchar(100)!",
+        "email varchar(120)!",
+        "role varchar(15)!",
+        "instructor_id int4?",
+        "batch_id int4?",
+        "account_status varchar(12)!='Active'::character varying",
+        "failed_attempts int2!=0",
+        "locked_until timestamp?",
+        "created_at timestamp!=CURRENT_TIMESTAMP"
+      ],
+      "constraints": [
+        "CHECK (((account_status)::text = ANY ((ARRAY['Active'::character varying, 'Locked'::character varying, 'Deactivated'::character varying])::text[])))",
+        "CHECK ((((role)::text <> 'Faculty'::text) OR (instructor_id IS NOT NULL)))",
+        "CHECK ((failed_attempts >= 0))",
+        "CHECK (((role)::text = ANY ((ARRAY['Administrator'::character varying, 'Coordinator'::character varying, 'Approver'::character varying, 'Faculty'::character varying, 'Student'::character varying])::text[])))",
+        "CHECK ((((role)::text <> 'Student'::text) OR (batch_id IS NOT NULL)))",
+        "FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE RESTRICT",
+        "FOREIGN KEY (instructor_id) REFERENCES instructors(instructor_id) ON DELETE RESTRICT",
+        "PRIMARY KEY (user_id)",
+        "UNIQUE (email)",
+        "UNIQUE (instructor_id)",
+        "UNIQUE (username)"
+      ],
+      "index_keys_and_predicates": [
+        "(batch_id)",
+        "(email)",
+        "(instructor_id)",
+        "(user_id)",
+        "(username)"
+      ],
+      "rls_enabled": true,
+      "policy_names": [],
+      "enabled_user_triggers": []
+    }
+  ],
+  "numeric_precision": [
+    {
+      "column_name": "objective_score",
+      "numeric_precision": 10,
+      "numeric_scale": 2
+    },
+    {
+      "column_name": "run_seconds",
+      "numeric_precision": 8,
+      "numeric_scale": 2
+    }
+  ],
+  "partial_unique_indexes": [
+    "CREATE UNIQUE INDEX uq_academic_terms_single_active ON public.academic_terms USING btree (status) WHERE ((status)::text = 'Active'::text)",
+    "CREATE UNIQUE INDEX uq_schedules_one_published_per_term_type ON public.schedules USING btree (term_id, schedule_type) WHERE ((status)::text = 'Published'::text)"
+  ],
+  "foreign_keys_without_full_leading_index": [
+    "fk_timetable_entries_offering_instructor_batch"
+  ],
+  "public_functions": [
+    {
+      "name": "fn_check_exam_room_capacity",
+      "security_definer": false,
+      "definition": "DECLARE\n    v_capacity SMALLINT;\nBEGIN\n    SELECT capacity INTO v_capacity\n    FROM rooms\n    WHERE room_id = NEW.room_id;\n\n    IF NEW.seats_allocated > v_capacity THEN\n        RAISE EXCEPTION 'seats_allocated (%) exceeds room capacity (%) for room_id % (E03).',\n            NEW.seats_allocated, v_capacity, NEW.room_id;\n    END IF;\n    RETURN NEW;\nEND;"
+    },
+    {
+      "name": "fn_check_exam_slot_overlap",
+      "security_definer": false,
+      "definition": "BEGIN\n    IF EXISTS (\n        SELECT 1\n        FROM exam_slots es\n        WHERE es.term_id = NEW.term_id\n          AND es.exam_date = NEW.exam_date\n          AND es.exam_slot_id <> COALESCE(NEW.exam_slot_id, -1)\n          AND NEW.start_time < es.end_time\n          AND es.start_time < NEW.end_time\n    ) THEN\n        RAISE EXCEPTION 'Exam session overlaps with an existing session on % (FR-5.7).', NEW.exam_date;\n    END IF;\n    RETURN NEW;\nEND;"
+    },
+    {
+      "name": "fn_prevent_log_mutation",
+      "security_definer": false,
+      "definition": "BEGIN\n    RAISE EXCEPTION 'Table % is append-only; UPDATE and DELETE are prohibited (FR-12.3, DB-5).', TG_TABLE_NAME;\nEND;"
+    },
+    {
+      "name": "fn_prevent_published_schedule_entry_edit",
+      "security_definer": false,
+      "definition": "DECLARE\n    v_schedule_id INTEGER;\n    v_status      VARCHAR(12);\nBEGIN\n    IF TG_TABLE_NAME = 'exam_room_allocations' THEN\n        SELECT ee.schedule_id INTO v_schedule_id\n        FROM exam_entries ee\n        WHERE ee.exam_entry_id = COALESCE(NEW.exam_entry_id, OLD.exam_entry_id);\n    ELSE\n        v_schedule_id := COALESCE(NEW.schedule_id, OLD.schedule_id);\n    END IF;\n\n    SELECT status INTO v_status\n    FROM schedules\n    WHERE schedule_id = v_schedule_id;\n\n    IF v_status IN ('Published', 'Archived') THEN\n        RAISE EXCEPTION 'Entries of a % schedule (schedule_id=%) are read-only; create a new version instead (SAF-4).',\n            v_status, v_schedule_id;\n    END IF;\n\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;"
+    },
+    {
+      "name": "fn_seed_default_constraint_rules",
+      "security_definer": false,
+      "definition": "DECLARE\n    v_schedule_type VARCHAR(10);\nBEGIN\n    SELECT schedule_type INTO v_schedule_type\n    FROM scheduling_configs\n    WHERE config_id = p_config_id;\n\n    IF v_schedule_type = 'Timetable' THEN\n        INSERT INTO constraint_rules (config_id, rule_code, rule_type, is_enabled, weight, param_value)\n        VALUES\n            (p_config_id, 'H01', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H02', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H03', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H04', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H05', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H06', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H07', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H08', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H09', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'H10', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'S01', 'Soft', TRUE, 5, NULL),\n            (p_config_id, 'S02', 'Soft', TRUE, 5, NULL),\n            (p_config_id, 'S03', 'Soft', TRUE, 5, 5),\n            (p_config_id, 'S04', 'Soft', TRUE, 5, 3),\n            (p_config_id, 'S05', 'Soft', TRUE, 5, NULL),\n            (p_config_id, 'S06', 'Soft', TRUE, 5, NULL)\n        ON CONFLICT (config_id, rule_code) DO NOTHING;\n    ELSIF v_schedule_type = 'Exam' THEN\n        INSERT INTO constraint_rules (config_id, rule_code, rule_type, is_enabled, weight, param_value)\n        VALUES\n            (p_config_id, 'E01', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'E02', 'Hard', TRUE, 0, 2),\n            (p_config_id, 'E03', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'E04', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'E05', 'Hard', TRUE, 0, NULL),\n            (p_config_id, 'ES01', 'Soft', TRUE, 5, NULL),\n            (p_config_id, 'ES02', 'Soft', TRUE, 5, NULL),\n            (p_config_id, 'ES03', 'Soft', TRUE, 5, NULL)\n        ON CONFLICT (config_id, rule_code) DO NOTHING;\n    END IF;\nEND;"
+    }
+  ]
+}

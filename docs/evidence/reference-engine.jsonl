@@ -1,0 +1,3 @@
+{"kind": "Exam", "courses": 80, "candidates": 3000, "rooms": 60, "seed": 1, "time_limit": 30, "elapsed": 0.142, "status": "feasible", "saved_exams": 80, "hard_conflicts": 0, "fallback": false}
+{"kind": "Timetable", "scale": 1, "offerings": 150, "rooms": 60, "slots": 48, "seed": 1, "time_limit": 45, "elapsed": 43.103, "status": "feasible", "witness_sessions": 180, "saved_sessions": 180, "hard_conflicts": 0, "score": -5}
+{"kind": "Timetable", "scale": 2, "offerings": 300, "rooms": 120, "slots": 48, "seed": 1, "time_limit": 45, "elapsed": 44.375, "status": "feasible", "witness_sessions": 360, "saved_sessions": 360, "hard_conflicts": 0, "score": -110}

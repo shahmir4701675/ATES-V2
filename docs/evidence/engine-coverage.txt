@@ -1,0 +1,11 @@
+Name                                  Stmts   Miss  Cover
+---------------------------------------------------------
+backend\engine\exam_data.py              32      0   100%
+backend\engine\exam_validator.py         48      3    94%
+backend\engine\exams.py                 173     69    60%
+backend\engine\initial_timetable.py      52      6    88%
+backend\engine\timetable.py             195     31    84%
+backend\engine\timetable_data.py         61      1    98%
+backend\engine\validator.py              86      6    93%
+---------------------------------------------------------
+TOTAL                                   647    116    82%
